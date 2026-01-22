@@ -12,7 +12,7 @@ const routes = [
   { name: "Weather", path: "/weather" },
   { name: "Prediction", path: "/prediction" },
   { name: "Learn", path: "/learn" },
-  { name: "Notification", path: "/notification" },
+  { name: "Notification", path: "/notification" }
 ];
 
 export default function Navbar() {
@@ -22,16 +22,17 @@ export default function Navbar() {
     <nav style={{
       width: "100%",
       padding: "14px 24px",
-      background: "#1e40af",
-      color: "white",
+      background: "white",
+      color: "#111",
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
       position: "sticky",
       top: 0,
-      zIndex: 1000
+      zIndex: 1000,
+      borderBottom: "1px solid #e5e7eb"
     }}>
-      <div className={interBold.className} style={{ fontSize: "1.6rem" }}>
+      <div className={interBold.className} style={{ fontSize: "1.6rem", color: "#6499E9" }}>
         Biosfera
       </div>
 
@@ -44,10 +45,10 @@ export default function Navbar() {
               href={r.path}
               className={(active ? interMedium : interLight).className}
               style={{
-                color: "white",
+                color: "#111",
                 textDecoration: "none",
                 fontSize: "0.95rem",
-                opacity: active ? 1 : 0.8
+                opacity: active ? 1 : 0.6
               }}
             >
               {r.name}
