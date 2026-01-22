@@ -1,20 +1,21 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Navbar from "@/components/navbar";
 import {
-  Search,
-  MapPin,
   AlertTriangle,
-  Play,
   Wind,
   CloudRain,
   Waves,
-  Share2,
   Calendar,
-  Mail,
+  Share2,
+  Navigation,
+  ArrowLeft,
+  BarChart3,
+  Flame,
   Clock,
-  Navigation
+  Play,
+  Search
 } from "lucide-react";
 import {
   LineChart,
@@ -25,6 +26,13 @@ import {
   Tooltip,
   ResponsiveContainer
 } from "recharts";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  useMapEvents
+} from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 
 type Disaster = {
   id: number;
@@ -39,10 +47,25 @@ type Disaster = {
   confidence: number;
 };
 
+function ClickHandler({ onPick }: { onPick: (pos: [number, number]) => void }) {
+  useMapEvents({
+    click(e) {
+      onPick([e.latlng.lat, e.latlng.lng]);
+    }
+  });
+  return null;
+}
+
 export default function PredictionPage() {
-  const [mode, setMode] = useState<"disasters" | "weekly">("disasters");
+  const [tab, setTab] = useState<"disasters" | "weekly">("disasters");
   const [selected, setSelected] = useState<Disaster | null>(null);
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
+  const [position, setPosition] = useState<[number, number]>([-6.2, 106.8]);
+
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const debounceRef = useRef<any>(null);
+  const mapTilerKey = "p7XunQgKBjJzjJSjV5Ze";
 
   const disasters: Disaster[] = [
     {
@@ -84,13 +107,9 @@ export default function PredictionPage() {
   ];
 
   useEffect(() => {
-    setSelected(disasters[0]);
-  }, []);
-
-  useEffect(() => {
-    if (mode === "weekly") {
+    if (tab === "weekly") {
       fetch(
-        "https://api.open-meteo.com/v1/forecast?latitude=-6.2&longitude=106.8&daily=temperature_2m_max,relative_humidity_2m_max,precipitation_sum&timezone=auto"
+        `https://api.open-meteo.com/v1/forecast?latitude=${position[0]}&longitude=${position[1]}&daily=temperature_2m_max,relative_humidity_2m_max,precipitation_sum&timezone=auto`
       )
         .then((r) => r.json())
         .then((d) => {
@@ -103,7 +122,37 @@ export default function PredictionPage() {
           setWeeklyData(days);
         });
     }
-  }, [mode]);
+  }, [tab, position]);
+
+  const fetchSuggestions = async (text: string) => {
+    if (!text.trim()) {
+      setSuggestions([]);
+      return;
+    }
+
+    const url = `https://api.maptiler.com/geocoding/${encodeURIComponent(
+      text
+    )}.json?key=${mapTilerKey}&autocomplete=true&limit=6`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+    setSuggestions(data.features || []);
+  };
+
+  const onQueryChange = (value: string) => {
+    setQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchSuggestions(value);
+    }, 250);
+  };
+
+  const selectSuggestion = (feature: any) => {
+    const [lon, lat] = feature.center;
+    setPosition([lat, lon]);
+    setQuery(feature.place_name);
+    setSuggestions([]);
+  };
 
   const severityColor = (s: string) => {
     if (s === "Low") return "#7CFC90";
@@ -117,434 +166,307 @@ export default function PredictionPage() {
     <div style={{ minHeight: "100vh", background: "#6499E9" }}>
       <Navbar />
 
-      <div
-        style={{
-          padding: 24,
-          display: "grid",
-          gridTemplateColumns: "1.1fr 1.6fr",
-          gap: 24
-        }}
-      >
+      <div style={{ padding: 24 }}>
         <div
           style={{
-            background: "#7aa9ee",
-            borderRadius: 24,
-            padding: 20,
             display: "flex",
-            flexDirection: "column",
-            gap: 20
+            gap: 12,
+            alignItems: "center",
+            marginBottom: 16
           }}
         >
-          <div
+          <button
+            onClick={() => {
+              setTab("disasters");
+              setSelected(null);
+            }}
             style={{
-              background: "white",
+              background:
+                tab === "disasters" ? "#fff" : "rgba(255,255,255,0.4)",
+              border: "none",
+              padding: "10px 18px",
               borderRadius: 999,
-              display: "flex",
-              alignItems: "center",
-              padding: "10px 16px",
-              gap: 10
+              fontWeight: 600
             }}
           >
-            <Search size={18} />
-            <input
-              placeholder="Search location"
-              style={{
-                border: "none",
-                outline: "none",
-                flex: 1,
-                fontSize: 14
-              }}
-            />
-          </div>
+            Upcoming Disasters
+          </button>
 
-          <div
+          <button
+            onClick={() => {
+              setTab("weekly");
+              setSelected(null);
+            }}
             style={{
-              flex: 1,
-              borderRadius: 20,
-              overflow: "hidden",
-              backgroundImage:
-                "url(https://api.maptiler.com/maps/satellite/256/{z}/{x}/{y}.jpg?key=JgFjMCBjlfgKtbkhN39r)",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              position: "relative"
+              background:
+                tab === "weekly" ? "#fff" : "rgba(255,255,255,0.4)",
+              border: "none",
+              padding: "10px 18px",
+              borderRadius: 999,
+              fontWeight: 600
             }}
           >
+            Weekly Climate Visualization
+          </button>
+
+          <div style={{ position: "relative", flex: 1, maxWidth: 360 }}>
             <div
               style={{
-                position: "absolute",
-                bottom: 16,
-                left: "50%",
-                transform: "translateX(-50%)",
                 display: "flex",
-                gap: 12
+                background: "white",
+                borderRadius: 999,
+                boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+                overflow: "hidden"
               }}
             >
+              <input
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
+                placeholder="Search place, address, landmark..."
+                style={{
+                  padding: "10px 14px",
+                  border: "none",
+                  outline: "none",
+                  width: "100%"
+                }}
+              />
               <div
                 style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  background: "white",
+                  background: "#6499E9",
+                  color: "white",
+                  padding: "0 16px",
                   display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
+                  alignItems: "center"
                 }}
               >
-                <MapPin size={20} />
-              </div>
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  background: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-              >
-                <AlertTriangle size={20} />
-              </div>
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  background: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-              >
-                <Play size={20} />
+                <Search size={18} />
               </div>
             </div>
-          </div>
-        </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center"
-            }}
-          >
-            <h2 style={{ color: "white", fontSize: 20 }}>
-              {mode === "disasters"
-                ? "Upcoming Disasters"
-                : "Weekly Climate Visualization"}
-            </h2>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setMode("disasters")}
-                style={{
-                  background: mode === "disasters" ? "#9fd6ff" : "white",
-                  borderRadius: 999,
-                  padding: "8px 16px",
-                  border: "none"
-                }}
-              >
-                Upcoming Disasters
-              </button>
-              <button
-                onClick={() => setMode("weekly")}
-                style={{
-                  background: mode === "weekly" ? "#9fd6ff" : "white",
-                  borderRadius: 999,
-                  padding: "8px 16px",
-                  border: "none"
-                }}
-              >
-                Weekly Climate Visualization
-              </button>
-            </div>
-          </div>
-
-          {mode === "disasters" && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 16
-              }}
-            >
+            {suggestions.length > 0 && (
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12
+                  position: "absolute",
+                  top: "110%",
+                  left: 0,
+                  right: 0,
+                  background: "white",
+                  borderRadius: 14,
+                  boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+                  overflow: "hidden",
+                  zIndex: 2000
                 }}
               >
-                {disasters.map((d) => (
+                {suggestions.map((s, i) => (
                   <div
-                    key={d.id}
-                    onClick={() => setSelected(d)}
+                    key={i}
+                    onClick={() => selectSuggestion(s)}
                     style={{
-                      background: "white",
-                      borderRadius: 18,
-                      padding: 16,
+                      padding: "10px 14px",
                       cursor: "pointer",
-                      border:
-                        selected?.id === d.id
-                          ? "2px solid #6499E9"
-                          : "2px solid transparent"
+                      borderBottom:
+                        i !== suggestions.length - 1
+                          ? "1px solid #eee"
+                          : "none"
                     }}
                   >
-                    <div style={{ fontWeight: 600 }}>{d.title}</div>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        marginTop: 8,
-                        flexWrap: "wrap",
-                        fontSize: 12,
-                        color: "#555"
-                      }}
-                    >
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <MapPin size={14} /> {d.distance}
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <AlertTriangle size={14} /> {d.severity}
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <Clock size={14} /> {d.time}
-                      </div>
-                    </div>
+                    {s.place_name}
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
 
-              {selected && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.2fr 1fr",
+            gap: 20
+          }}
+        >
+          <div style={{ borderRadius: 20, overflow: "hidden", height: 420 }}>
+            <MapContainer
+              center={position}
+              zoom={11}
+              style={{ height: "100%", width: "100%" }}
+            >
+              <TileLayer
+                url={`https://api.maptiler.com/maps/base-v4/{z}/{x}/{y}.png?key=${mapTilerKey}`}
+                attribution="© MapTiler © OpenStreetMap"
+              />
+              <Marker position={position} />
+              <ClickHandler onPick={setPosition} />
+            </MapContainer>
+          </div>
+
+          {tab === "disasters" && !selected && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {disasters.map((d) => (
                 <div
+                  key={d.id}
+                  onClick={() => setSelected(d)}
                   style={{
                     background: "white",
-                    borderRadius: 28,
-                    padding: 24,
+                    borderRadius: 18,
+                    padding: 16,
+                    cursor: "pointer",
                     display: "flex",
-                    flexDirection: "column",
-                    gap: 20
+                    justifyContent: "space-between",
+                    alignItems: "center"
                   }}
                 >
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(5, 1fr)",
-                      gap: 10
-                    }}
-                  >
-                    {["Low", "Medium", "Moderate", "Severe", "Extreme"].map(
-                      (s) => (
-                        <div
-                          key={s}
-                          style={{
-                            background:
-                              selected.severity === s
-                                ? severityColor(s)
-                                : "#f1f5f9",
-                            borderRadius: 999,
-                            padding: "8px 0",
-                            textAlign: "center",
-                            fontSize: 12,
-                            fontWeight: 600
-                          }}
-                        >
-                          {s}
-                        </div>
-                      )
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 12,
-                      background: "#f7f7f7",
-                      borderRadius: 18,
-                      padding: 16
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: 8, fontSize: 13 }}>
-                      <Navigation size={16} /> {selected.distance}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, fontSize: 13 }}>
-                      <AlertTriangle size={16} /> {selected.severity}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, fontSize: 13 }}>
-                      <Clock size={16} /> {selected.time}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, fontSize: 13 }}>
-                      <Clock size={16} /> {selected.window}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(4, 1fr)",
-                      gap: 12
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: "#f7f7f7",
-                        borderRadius: 16,
-                        padding: 14,
-                        textAlign: "center"
-                      }}
-                    >
-                      <Wind size={20} />
-                      <div style={{ fontSize: 13, marginTop: 6 }}>
-                        {selected.wind}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#777" }}>Wind</div>
-                    </div>
-
-                    <div
-                      style={{
-                        background: "#f7f7f7",
-                        borderRadius: 16,
-                        padding: 14,
-                        textAlign: "center"
-                      }}
-                    >
-                      <CloudRain size={20} />
-                      <div style={{ fontSize: 13, marginTop: 6 }}>
-                        {selected.rainfall}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#777" }}>
-                        Rainfall
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        background: "#f7f7f7",
-                        borderRadius: 16,
-                        padding: 14,
-                        textAlign: "center"
-                      }}
-                    >
-                      <Waves size={20} />
-                      <div style={{ fontSize: 13, marginTop: 6 }}>
-                        {selected.surge}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#777" }}>
-                        Surge
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        background: "#f7f7f7",
-                        borderRadius: 16,
-                        padding: 14,
-                        textAlign: "center"
-                      }}
-                    >
-                      <div style={{ fontSize: 18 }}>
-                        {selected.confidence}%
-                      </div>
-                      <div style={{ fontSize: 11, color: "#777" }}>
-                        Confidence
-                      </div>
-                    </div>
-                  </div>
-
                   <div>
-                    <div
-                      style={{
-                        color: "red",
-                        fontSize: 13,
-                        display: "flex",
-                        gap: 6,
-                        alignItems: "center"
-                      }}
-                    >
-                      <AlertTriangle size={14} /> Recommended Actions
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>
+                      {d.title}
                     </div>
-                    <ul style={{ fontSize: 13, marginTop: 6 }}>
-                      <li>Prepare emergency kit</li>
-                      <li>Evacuate low-lying areas</li>
-                      <li>Secure property</li>
-                    </ul>
+                    <div style={{ fontSize: 13, color: "#666" }}>
+                      {d.distance}
+                    </div>
                   </div>
-
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginTop: 10
+                      background: severityColor(d.severity),
+                      padding: "6px 14px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 700
                     }}
                   >
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Share2 size={16} /> Share Information
-                    </div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Calendar size={16} /> Enable Alert to Calendar
-                    </div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Mail size={16} /> Send Update to E-mail
-                    </div>
+                    {d.severity}
                   </div>
                 </div>
-              )}
+              ))}
             </div>
           )}
 
-          {mode === "weekly" && (
-            <div
-              style={{
-                background: "white",
-                borderRadius: 28,
-                padding: 24,
-                display: "flex",
-                flexDirection: "column",
-                gap: 24
-              }}
-            >
-              <div style={{ height: 200 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weeklyData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="temp" stroke="#ff6b6b" />
-                  </LineChart>
-                </ResponsiveContainer>
+          {tab === "disasters" && selected && (
+            <div style={{ background: "white", borderRadius: 20, padding: 20 }}>
+              <button
+                onClick={() => setSelected(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 12,
+                  cursor: "pointer",
+                  fontWeight: 600
+                }}
+              >
+                <ArrowLeft size={16} /> Back
+              </button>
+
+              <h2 style={{ marginBottom: 6 }}>{selected.title}</h2>
+              <div style={{ color: "#666", marginBottom: 16 }}>
+                {selected.distance}
               </div>
 
-              <div style={{ height: 200 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weeklyData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="humidity"
-                      stroke="#6499E9"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14
+                }}
+              >
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Wind size={18} /> {selected.wind}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <CloudRain size={18} /> {selected.rainfall}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Waves size={18} /> {selected.surge}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Clock size={18} /> {selected.time}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Calendar size={18} /> {selected.window}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Flame size={18} /> {selected.confidence}%
+                </div>
               </div>
 
-              <div style={{ height: 200 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weeklyData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="rain" stroke="#4caf50" />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div
+                style={{
+                  marginTop: 20,
+                  display: "flex",
+                  gap: 12,
+                  flexWrap: "wrap"
+                }}
+              >
+                <button
+                  style={{
+                    background: "#6499E9",
+                    color: "white",
+                    border: "none",
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8
+                  }}
+                >
+                  <Navigation size={18} /> Navigate
+                </button>
+                <button
+                  style={{
+                    background: "#eee",
+                    border: "none",
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8
+                  }}
+                >
+                  <Share2 size={18} /> Share
+                </button>
+                <button
+                  style={{
+                    background: "#eee",
+                    border: "none",
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8
+                  }}
+                >
+                  <Play size={18} /> Simulate
+                </button>
               </div>
+            </div>
+          )}
+
+          {tab === "weekly" && (
+            <div style={{ background: "white", borderRadius: 20, padding: 20 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 12
+                }}
+              >
+                <BarChart3 size={18} />
+                <h3 style={{ margin: 0 }}>Weekly Climate</h3>
+              </div>
+
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={weeklyData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="temp" stroke="#ff6b6b" />
+                  <Line type="monotone" dataKey="humidity" stroke="#4dabf7" />
+                  <Line type="monotone" dataKey="rain" stroke="#51cf66" />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>
